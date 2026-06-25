@@ -1,0 +1,6 @@
+{
+  "name": "NAV AI Console",
+  "description": "A powerful full-stack AI platform like Gemini and Claude, featuring an interactive playground and a developer hub to generate, manage, and test NAV AI API keys.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
