@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import Header from "./components/Header";
 import Playground from "./components/Playground";
 import DeveloperHub from "./components/DeveloperHub";
@@ -112,6 +113,7 @@ export default function App() {
           />
         )}
       </main>
+      <SpeedInsights />
     </div>
   );
 }
