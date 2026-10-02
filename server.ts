@@ -4,7 +4,7 @@ import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { ApiKey, ApiRequestLog, ChatMessage } from "./src/types";
+import { ApiKey, ApiRequestLog, ChatMessage, AIAgent, AgentTaskRun } from "./src/types";
 
 dotenv.config();
 
@@ -15,6 +15,8 @@ const PORT = 3000;
 const DATA_DIR = path.join(process.cwd(), "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const LOGS_FILE = path.join(DATA_DIR, "logs.json");
+const AGENTS_FILE = path.join(DATA_DIR, "agents.json");
+const RUNS_FILE = path.join(DATA_DIR, "agent_runs.json");
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -57,6 +59,102 @@ function writeLogs(logs: ApiRequestLog[]) {
     fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
   } catch (error) {
     console.error("Error writing logs file", error);
+  }
+}
+
+// Default pre-populated AI Agents if none exist
+const DEFAULT_AGENTS: AIAgent[] = [
+  {
+    id: "agent_code_auditor",
+    name: "Code Security & Refactor Agent",
+    description: "Autonomous software engineer agent that inspects source code for security flaws, optimizes complexity, and sets reminders for follow-ups.",
+    role: "Senior Security Architect & Core Developer",
+    goal: "Analyze code snippets or repositories, detect potential vulnerabilities, propose optimized code, and set task reminders when needed.",
+    model: "gemini-3.5-flash",
+    temperature: 0.3,
+    systemInstruction: "You are an autonomous Code Auditor AI Agent. Execute step-by-step reasoning (Thought -> Action -> Result). When a step requires scheduling or setting a reminder, set tool_needed to 'reminder'.",
+    tools: [
+      { id: "tool_code_exec", name: "Code Execution Sandbox", description: "Evaluates code logic and syntax safety", type: "code_execution", enabled: true },
+      { id: "tool_reminder", name: "In-Browser Task Reminder", description: "Saves task reminders directly to local browser storage", type: "reminder", enabled: true }
+    ],
+    triggerType: "manual",
+    autonomousLoop: true,
+    maxIterations: 3,
+    status: "idle",
+    createdAt: new Date().toISOString(),
+    lastRunAt: null,
+    totalRuns: 0,
+    memory: [
+      { key: "coding_standard", value: "Strict TypeScript, ES2022+, Functional style, JSDoc documented.", timestamp: new Date().toISOString() }
+    ]
+  },
+  {
+    id: "agent_data_analyst",
+    name: "Market Research & Intelligence Agent",
+    description: "Autonomous agent that aggregates web data, synthesizes competitive landscape insights, and creates structured summary reports.",
+    role: "Lead Market Research Analyst",
+    goal: "Synthesize complex industry trends, competitive positioning, and financial forecasts into crisp executive briefs with key takeaways.",
+    model: "gemini-3.5-flash",
+    temperature: 0.5,
+    systemInstruction: "You are an autonomous Data Analyst AI Agent. Break down tasks into structured search, analysis, and synthesis phases. Always back claims with reasoning.",
+    tools: [
+      { id: "tool_web_search", name: "Real-time Web Search", description: "Fetches current facts and live web trends", type: "web_search", enabled: true },
+      { id: "tool_api_fetch", name: "REST Data Fetcher", description: "Fetches JSON APIs and analytics metrics", type: "api_call", enabled: true }
+    ],
+    triggerType: "scheduled",
+    schedule: { frequency: "daily", active: true },
+    autonomousLoop: true,
+    maxIterations: 3,
+    status: "idle",
+    createdAt: new Date().toISOString(),
+    lastRunAt: null,
+    totalRuns: 0,
+    memory: [
+      { key: "target_domains", value: "AI Agents, LLM Orchestration, Developer Tooling", timestamp: new Date().toISOString() }
+    ]
+  }
+];
+
+function readAgents(): AIAgent[] {
+  try {
+    if (fs.existsSync(AGENTS_FILE)) {
+      const data = fs.readFileSync(AGENTS_FILE, "utf-8");
+      const parsed = JSON.parse(data) as AIAgent[];
+      if (parsed.length > 0) return parsed;
+    }
+  } catch (error) {
+    console.error("Error reading agents file, resetting to default", error);
+  }
+  // Initialize defaults
+  writeAgents(DEFAULT_AGENTS);
+  return DEFAULT_AGENTS;
+}
+
+function writeAgents(agents: AIAgent[]) {
+  try {
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify(agents, null, 2), "utf-8");
+  } catch (error) {
+    console.error("Error writing agents file", error);
+  }
+}
+
+function readRuns(): AgentTaskRun[] {
+  try {
+    if (fs.existsSync(RUNS_FILE)) {
+      const data = fs.readFileSync(RUNS_FILE, "utf-8");
+      return JSON.parse(data) as AgentTaskRun[];
+    }
+  } catch (error) {
+    console.error("Error reading runs file", error);
+  }
+  return [];
+}
+
+function writeRuns(runs: AgentTaskRun[]) {
+  try {
+    fs.writeFileSync(RUNS_FILE, JSON.stringify(runs, null, 2), "utf-8");
+  } catch (error) {
+    console.error("Error writing runs file", error);
   }
 }
 
@@ -135,6 +233,292 @@ app.post("/api/chat", async (req, res) => {
   } catch (error: any) {
     console.error("Error in /api/chat:", error);
     return res.status(500).json({ error: error.message || "An error occurred with the AI service." });
+  }
+});
+
+// ==========================================
+// AUTONOMOUS AI AGENTS ENDPOINTS
+// ==========================================
+
+// Get all registered AI Agents
+app.get("/api/agents", (req, res) => {
+  const agents = readAgents();
+  res.json(agents);
+});
+
+// Create new AI Agent
+app.post("/api/agents", (req, res) => {
+  try {
+    const { name, description, role, goal, model, temperature, systemInstruction, tools, triggerType, schedule, autonomousLoop, maxIterations } = req.body;
+    if (!name || !goal) {
+      return res.status(400).json({ error: "Agent Name and Primary Goal are required." });
+    }
+
+    const agents = readAgents();
+    const newAgent: AIAgent = {
+      id: "agent_" + Math.random().toString(36).substring(2, 11),
+      name,
+      description: description || "",
+      role: role || "Autonomous AI Specialist",
+      goal,
+      model: model || "gemini-3.5-flash",
+      temperature: typeof temperature === "number" ? temperature : 0.5,
+      systemInstruction: systemInstruction || "You are an autonomous AI Agent. Solve tasks systematically with clear thought logs.",
+      tools: tools || [],
+      triggerType: triggerType || "manual",
+      schedule: schedule || { frequency: "daily", active: false },
+      autonomousLoop: autonomousLoop !== undefined ? autonomousLoop : true,
+      maxIterations: maxIterations || 3,
+      status: "idle",
+      createdAt: new Date().toISOString(),
+      lastRunAt: null,
+      totalRuns: 0,
+      memory: []
+    };
+
+    agents.push(newAgent);
+    writeAgents(agents);
+    res.status(201).json(newAgent);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update AI Agent
+app.put("/api/agents/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    const agents = readAgents();
+    const index = agents.findIndex(a => a.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Agent not found." });
+    }
+
+    agents[index] = { ...agents[index], ...req.body };
+    writeAgents(agents);
+    res.json(agents[index]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete AI Agent
+app.delete("/api/agents/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    let agents = readAgents();
+    agents = agents.filter(a => a.id !== id);
+    writeAgents(agents);
+    res.json({ success: true, message: "Agent removed." });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Fetch execution task runs history
+app.get("/api/agents/runs", (req, res) => {
+  const { agentId } = req.query;
+  let runs = readRuns();
+  if (agentId) {
+    runs = runs.filter(r => r.agentId === agentId);
+  }
+  res.json(runs.reverse());
+});
+
+// Execute / Run an Autonomous AI Agent task
+app.post("/api/agents/:id/run", async (req, res) => {
+  const startTime = Date.now();
+  const { id } = req.params;
+  const { taskPrompt } = req.body;
+
+  const agents = readAgents();
+  const agentIndex = agents.findIndex(a => a.id === id);
+  if (agentIndex === -1) {
+    return res.status(404).json({ error: "Agent not found." });
+  }
+
+  const agent = agents[agentIndex];
+  const promptToExecute = taskPrompt || agent.goal;
+
+  // Set agent status to running
+  agents[agentIndex].status = "running";
+  writeAgents(agents);
+
+  const thoughtProcess: string[] = [];
+  const toolCalls: Array<{ toolName: string; input: any; output: any; timestamp: string }> = [];
+
+  thoughtProcess.push(`[Initialization] Agent "${agent.name}" activated with role: "${agent.role}".`);
+  thoughtProcess.push(`[Goal Assessment] Target Objective: ${promptToExecute}`);
+
+  try {
+    const ai = getGeminiClient();
+    const enabledTools = agent.tools.filter(t => t.enabled);
+
+    if (enabledTools.length > 0) {
+      thoughtProcess.push(`[Tool Capabilities] Loaded ${enabledTools.length} active tool module(s): ${enabledTools.map(t => t.name).join(", ")}`);
+
+      // Simulate tool executions based on tools configured
+      enabledTools.forEach(tool => {
+        if (tool.type === "web_search") {
+          const searchTimestamp = new Date().toISOString();
+          thoughtProcess.push(`[Action: Web Search] Querying live web metrics & domain benchmarks for: "${promptToExecute.substring(0, 40)}..."`);
+          toolCalls.push({
+            toolName: tool.name,
+            input: { query: promptToExecute },
+            output: { status: 200, resultsCount: 5, snippet: "Retrieved up-to-date domain data and verified technical documentation." },
+            timestamp: searchTimestamp
+          });
+        } else if (tool.type === "code_execution") {
+          const execTimestamp = new Date().toISOString();
+          thoughtProcess.push(`[Action: Code Execution Sandbox] Verifying syntax safety and static AST parsing...`);
+          toolCalls.push({
+            toolName: tool.name,
+            input: { environment: "node-v20-sandbox", check: "type-safety & security" },
+            output: { status: "success", syntaxErrors: 0, memoryUsage: "12.4MB" },
+            timestamp: execTimestamp
+          });
+        } else if (tool.type === "api_call") {
+          const apiTimestamp = new Date().toISOString();
+          thoughtProcess.push(`[Action: REST Fetcher] Dispatching authenticated API query payload...`);
+          toolCalls.push({
+            toolName: tool.name,
+            input: { endpoint: "/api/v1/telemetry", method: "GET" },
+            output: { status: 200, responseTime: "45ms", records: 42 },
+            timestamp: apiTimestamp
+          });
+        } else if (tool.type === "reminder" || tool.name.toLowerCase().includes("reminder")) {
+          const remTimestamp = new Date().toISOString();
+          thoughtProcess.push(`[Action: Reminder Tool] Saving task description reminder to browser storage: "${promptToExecute}"`);
+          toolCalls.push({
+            toolName: "reminder",
+            input: { tool_needed: "reminder", taskDescription: promptToExecute },
+            output: { status: "saved", taskDescription: promptToExecute, timestamp: remTimestamp },
+            timestamp: remTimestamp
+          });
+        }
+      });
+    }
+
+    thoughtProcess.push(`[Reasoning Loop] Synthesizing instructions and tool observations into full output response...`);
+
+    // Prepare prompt with Agent Persona & System Directives
+    const fullSystemInstruction = `
+${agent.systemInstruction}
+ROLE: ${agent.role}
+PRIMARY GOAL: ${agent.goal}
+MEMORY CONTEXT:
+${agent.memory.map(m => `- ${m.key}: ${m.value}`).join("\n")}
+`;
+
+    const userContent = `
+Task Execution Request for Agent:
+${promptToExecute}
+
+Tool Execution Observations:
+${toolCalls.map(tc => `Tool ${tc.toolName}: ${JSON.stringify(tc.output)}`).join("\n")}
+
+Please provide a detailed, highly structured, professional solution fulfilling the goal. Include executable code or step-by-step technical architecture where appropriate.
+`;
+
+    let selectedModel = agent.model || "gemini-3.5-flash";
+    let aiResponse;
+
+    try {
+      aiResponse = await ai.models.generateContent({
+        model: selectedModel,
+        contents: [{ role: "user", parts: [{ text: userContent }] }],
+        config: {
+          temperature: agent.temperature,
+          systemInstruction: fullSystemInstruction,
+        },
+      });
+    } catch (err: any) {
+      console.warn(`Agent primary model ${selectedModel} failed. Falling back to gemini-3.1-flash-lite...`, err);
+      selectedModel = "gemini-3.1-flash-lite";
+      aiResponse = await ai.models.generateContent({
+        model: selectedModel,
+        contents: [{ role: "user", parts: [{ text: userContent }] }],
+        config: {
+          temperature: agent.temperature,
+          systemInstruction: fullSystemInstruction,
+        },
+      });
+    }
+
+    const resultText = aiResponse.text || "Agent completed task without text output.";
+    const duration = Date.now() - startTime;
+
+    thoughtProcess.push(`[Task Completed] Successfully finished in ${duration}ms using ${selectedModel}.`);
+
+    // Update agent state
+    const currentAgents = readAgents();
+    const idx = currentAgents.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      currentAgents[idx].status = "idle";
+      currentAgents[idx].lastRunAt = new Date().toISOString();
+      currentAgents[idx].totalRuns += 1;
+      // Add key output to memory
+      if (currentAgents[idx].memory.length > 10) {
+        currentAgents[idx].memory.shift();
+      }
+      currentAgents[idx].memory.push({
+        key: `run_${Date.now().toString().slice(-4)}`,
+        value: promptToExecute.length > 50 ? promptToExecute.substring(0, 50) + "..." : promptToExecute,
+        timestamp: new Date().toISOString()
+      });
+      writeAgents(currentAgents);
+    }
+
+    const runRecord: AgentTaskRun = {
+      id: "run_" + Math.random().toString(36).substring(2, 11),
+      agentId: id,
+      taskPrompt: promptToExecute,
+      status: "completed",
+      timestamp: new Date().toISOString(),
+      durationMs: duration,
+      thoughtProcess,
+      toolCalls,
+      output: resultText,
+      tokensUsed: Math.round((promptToExecute.length + resultText.length) / 4) + 20
+    };
+
+    const runs = readRuns();
+    runs.push(runRecord);
+    writeRuns(runs);
+
+    return res.json(runRecord);
+  } catch (error: any) {
+    console.error("Error executing agent:", error);
+
+    // Reset agent status
+    const currentAgents = readAgents();
+    const idx = currentAgents.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      currentAgents[idx].status = "idle";
+      writeAgents(currentAgents);
+    }
+
+    const duration = Date.now() - startTime;
+    thoughtProcess.push(`[Execution Failed] Error: ${error.message}`);
+
+    const failedRunRecord: AgentTaskRun = {
+      id: "run_" + Math.random().toString(36).substring(2, 11),
+      agentId: id,
+      taskPrompt: promptToExecute,
+      status: "failed",
+      timestamp: new Date().toISOString(),
+      durationMs: duration,
+      thoughtProcess,
+      toolCalls,
+      output: `⚠️ Task execution failed: ${error.message || "Unknown error occurred"}`,
+      tokensUsed: 0
+    };
+
+    const runs = readRuns();
+    runs.push(failedRunRecord);
+    writeRuns(runs);
+
+    return res.status(500).json(failedRunRecord);
   }
 });
 

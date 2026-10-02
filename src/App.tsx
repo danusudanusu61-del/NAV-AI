@@ -2,10 +2,11 @@ import React, { useState, useEffect } from "react";
 import Header from "./components/Header";
 import Playground from "./components/Playground";
 import DeveloperHub from "./components/DeveloperHub";
+import AgentStudio from "./components/AgentStudio";
 import { ChatSession } from "./types";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'playground' | 'developer'>('playground');
+  const [activeTab, setActiveTab] = useState<'playground' | 'developer' | 'agents'>('agents');
   const [apiStatus, setApiStatus] = useState<'online' | 'offline'>('online');
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     try {
@@ -99,7 +100,9 @@ export default function App() {
 
       {/* Main Panel Router */}
       <main className="flex-1 flex overflow-hidden">
-        {activeTab === 'playground' ? (
+        {activeTab === 'agents' ? (
+          <AgentStudio />
+        ) : activeTab === 'playground' ? (
           <Playground 
             sessions={sessions}
             setSessions={setSessions}

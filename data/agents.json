@@ -1,0 +1,131 @@
+[
+  {
+    "id": "agent_code_auditor",
+    "name": "Code Security & Refactor Agent",
+    "description": "Autonomous software engineer agent that inspects source code for security flaws, optimizes complexity, and generates production pull requests.",
+    "role": "Senior Security Architect & Core Developer",
+    "goal": "Analyze code snippets or repositories, detect potential vulnerabilities, and propose optimized, bug-free refactored code with full unit test coverage.",
+    "model": "gemini-3.5-flash",
+    "temperature": 0.3,
+    "systemInstruction": "You are an autonomous Code Auditor AI Agent. Execute step-by-step reasoning (Thought -> Action -> Result). Analyze logic, security vectors, performance bottlenecks, and generate complete code solutions.",
+    "tools": [
+      {
+        "id": "tool_code_exec",
+        "name": "Code Execution Sandbox",
+        "description": "Evaluates code logic and syntax safety",
+        "type": "code_execution",
+        "enabled": true
+      },
+      {
+        "id": "tool_static_analysis",
+        "name": "Static Vulnerability Scanner",
+        "description": "Scans for OWASP top vulnerabilities",
+        "type": "data_parser",
+        "enabled": true
+      }
+    ],
+    "triggerType": "manual",
+    "autonomousLoop": true,
+    "maxIterations": 3,
+    "status": "idle",
+    "createdAt": "2026-10-02T19:25:21.889Z",
+    "lastRunAt": null,
+    "totalRuns": 0,
+    "memory": [
+      {
+        "key": "coding_standard",
+        "value": "Strict TypeScript, ES2022+, Functional style, JSDoc documented.",
+        "timestamp": "2026-10-02T19:25:21.889Z"
+      }
+    ]
+  },
+  {
+    "id": "agent_data_analyst",
+    "name": "Market Research & Intelligence Agent",
+    "description": "Autonomous agent that aggregates web data, synthesizes competitive landscape insights, and creates structured summary reports.",
+    "role": "Lead Market Research Analyst",
+    "goal": "Synthesize complex industry trends, competitive positioning, and financial forecasts into crisp executive briefs with key takeaways.",
+    "model": "gemini-3.5-flash",
+    "temperature": 0.5,
+    "systemInstruction": "You are an autonomous Data Analyst AI Agent. Break down tasks into structured search, analysis, and synthesis phases. Always back claims with reasoning.",
+    "tools": [
+      {
+        "id": "tool_web_search",
+        "name": "Real-time Web Search",
+        "description": "Fetches current facts and live web trends",
+        "type": "web_search",
+        "enabled": true
+      },
+      {
+        "id": "tool_api_fetch",
+        "name": "REST Data Fetcher",
+        "description": "Fetches JSON APIs and analytics metrics",
+        "type": "api_call",
+        "enabled": true
+      }
+    ],
+    "triggerType": "scheduled",
+    "schedule": {
+      "frequency": "daily",
+      "active": true
+    },
+    "autonomousLoop": true,
+    "maxIterations": 3,
+    "status": "idle",
+    "createdAt": "2026-10-02T19:25:21.889Z",
+    "lastRunAt": null,
+    "totalRuns": 0,
+    "memory": [
+      {
+        "key": "target_domains",
+        "value": "AI Agents, LLM Orchestration, Developer Tooling",
+        "timestamp": "2026-10-02T19:25:21.889Z"
+      }
+    ]
+  },
+  {
+    "id": "agent_uih89t26v",
+    "name": "Autonomous QA & Test Agent",
+    "description": "",
+    "role": "Lead Test Automation Specialist",
+    "goal": "Run end-to-end regression test suites and verify UI state integrity.",
+    "model": "gemini-3.5-flash",
+    "temperature": 0.5,
+    "systemInstruction": "You are an autonomous AI Agent. Execute step-by-step reasoning (Thought -> Action -> Result).",
+    "tools": [
+      {
+        "id": "tool_web_search",
+        "name": "Web Search Synthesizer",
+        "description": "Queries live web search index for current information",
+        "type": "web_search",
+        "enabled": true
+      },
+      {
+        "id": "tool_code_exec",
+        "name": "Code Execution Sandbox",
+        "description": "Validates code syntax and unit tests",
+        "type": "code_execution",
+        "enabled": true
+      },
+      {
+        "id": "tool_api_fetch",
+        "name": "REST Endpoint Fetcher",
+        "description": "Dispatches HTTP requests to remote APIs",
+        "type": "api_call",
+        "enabled": false
+      }
+    ],
+    "triggerType": "manual",
+    "schedule": {
+      "frequency": "daily",
+      "active": false
+    },
+    "autonomousLoop": true,
+    "maxIterations": 3,
+    "status": "idle",
+    "createdAt": "2026-10-02T19:26:18.045Z",
+    "lastRunAt": null,
+    "totalRuns": 0,
+    "memory": []
+  }
+]
