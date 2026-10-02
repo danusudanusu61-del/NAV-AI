@@ -1,9 +1,9 @@
 import React from "react";
-import { Cpu, Code2, MessageSquareCode, Terminal, AlertCircle } from "lucide-react";
+import { Cpu, Code2, MessageSquareCode, Terminal, Bot, Sparkles } from "lucide-react";
 
 interface HeaderProps {
-  activeTab: 'playground' | 'developer';
-  setActiveTab: (tab: 'playground' | 'developer') => void;
+  activeTab: 'playground' | 'developer' | 'agents';
+  setActiveTab: (tab: 'playground' | 'developer' | 'agents') => void;
   apiStatus: 'online' | 'offline';
 }
 
@@ -30,10 +30,23 @@ export default function Header({ activeTab, setActiveTab, apiStatus }: HeaderPro
       {/* Tab navigation */}
       <nav className="flex items-center bg-zinc-900 p-1 rounded-xl border border-zinc-800" id="header-navigation">
         <button
+          onClick={() => setActiveTab('agents')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+            activeTab === 'agents'
+              ? 'bg-zinc-800 text-emerald-400 shadow-md shadow-zinc-950/50'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+          }`}
+          id="tab-agents-btn"
+        >
+          <Bot className="h-4 w-4 text-emerald-400" />
+          <span>AI Agent Studio</span>
+          <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-mono">NEW</span>
+        </button>
+        <button
           onClick={() => setActiveTab('playground')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
             activeTab === 'playground'
-              ? 'bg-zinc-800 text-emerald-400 shadow-md shadow-zinc-950/50'
+              ? 'bg-zinc-800 text-teal-400 shadow-md shadow-zinc-950/50'
               : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
           }`}
           id="tab-playground-btn"

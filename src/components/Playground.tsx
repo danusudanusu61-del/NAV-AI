@@ -2,9 +2,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Send, Sparkles, Terminal, Copy, Check, Info, Settings, 
-  Trash2, Plus, MessageSquare, Code2, PenTool, Lightbulb, Bot, User 
+  Trash2, Plus, MessageSquare, Code2, PenTool, Lightbulb, Bot, User, Bell, CheckSquare, Square
 } from "lucide-react";
-import { ChatMessage, ChatSession } from "../types";
+import { ChatMessage, ChatSession, Reminder } from "../types";
 
 interface PlaygroundProps {
   sessions: ChatSession[];
@@ -56,6 +56,22 @@ export default function Playground({
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  // Reminders state in Playground
+  const [reminders, setReminders] = useState<Reminder[]>(() => {
+    try {
+      const stored = localStorage.getItem("nav_ai_reminders");
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [showRemindersModal, setShowRemindersModal] = useState(false);
+  const [manualReminderText, setManualReminderText] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem("nav_ai_reminders", JSON.stringify(reminders));
+  }, [reminders]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
@@ -505,11 +521,82 @@ export default function Playground({
         </AnimatePresence>
 
         {/* Input box */}
-        <div className="border-t border-zinc-900 p-4 bg-zinc-950 bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent">
+        <div className="border-t border-zinc-900 p-4 bg-zinc-950 bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent relative">
+
+          {/* Reminders Panel Overlay if opened */}
+          <AnimatePresence>
+            {showRemindersModal && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="max-w-3xl mx-auto mb-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-2xl space-y-3"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-amber-400" />
+                    <span className="text-xs font-bold font-mono text-zinc-200 uppercase tracking-wider">In-Browser Reminders</span>
+                  </div>
+                  <button onClick={() => setShowRemindersModal(false)} className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300">
+                    [CLOSE]
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {reminders.map((rem) => (
+                    <div key={rem.id} className="flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 text-xs font-mono">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => setReminders(prev => prev.map(r => r.id === rem.id ? { ...r, completed: !r.completed } : r))}
+                          className="text-amber-400 shrink-0"
+                        >
+                          {rem.completed ? <CheckSquare className="h-4 w-4 text-emerald-400" /> : <Square className="h-4 w-4 text-zinc-600" />}
+                        </button>
+                        <span className={`truncate ${rem.completed ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>{rem.taskDescription}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReminders(prev => prev.filter(r => r.id !== rem.id))}
+                        className="text-zinc-600 hover:text-red-400 shrink-0 ml-2"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {reminders.length === 0 && (
+                    <div className="text-center py-4 text-zinc-500 font-mono text-xs">No reminders saved yet</div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <form 
             onSubmit={(e) => { e.preventDefault(); handleSendMessage(inputText); }}
             className="max-w-3xl mx-auto flex gap-3 items-end"
           >
+            {/* Reminders Tab Button Next to Input Area */}
+            <button
+              type="button"
+              onClick={() => setShowRemindersModal(!showRemindersModal)}
+              className={`p-3.5 rounded-2xl border font-mono text-xs flex items-center gap-2 transition-all cursor-pointer shrink-0 ${
+                showRemindersModal
+                  ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
+                  : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-amber-400 hover:border-zinc-700"
+              }`}
+              id="playground-reminders-tab-btn"
+              title="View In-Browser Reminders"
+            >
+              <Bell className="h-4 w-4 text-amber-400" />
+              <span className="hidden sm:inline font-bold">Reminders</span>
+              {reminders.filter(r => !r.completed).length > 0 && (
+                <span className="bg-amber-500 text-zinc-950 font-bold px-1.5 py-0.2 rounded-full text-[10px]">
+                  {reminders.filter(r => !r.completed).length}
+                </span>
+              )}
+            </button>
+
             <div className="flex-1 bg-zinc-900 border border-zinc-800 hover:border-zinc-700/80 rounded-2xl focus-within:border-emerald-500/80 transition-all duration-200 px-4 py-2 flex items-end">
               <textarea
                 value={inputText}
