@@ -46,6 +46,128 @@ const PROMPT_SUGGESTIONS = [
   },
 ];
 
+const parseInlineFormatting = (text: string) => {
+  const inlineParts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+  return inlineParts.map((part, index) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={index} className="bg-zinc-800 text-teal-300 px-1.5 py-0.5 rounded font-mono text-xs border border-zinc-700">
+          {part.slice(1, -1)}
+        </code>
+      );
+    } else if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index} className="text-zinc-100 font-bold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+};
+
+/**
+ * Performance Optimization:
+ * Memoized ChatMessageItem component prevents re-parsing markdown formatting
+ * and re-rendering message bubbles when typing in the input textarea.
+ * Impact: Prevents N regex operations & DOM diffing operations per keystroke.
+ */
+const ChatMessageItem = React.memo(function ChatMessageItem({ message }: { message: ChatMessage }) {
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  const copyCodeToClipboard = (code: string, id: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
+
+  const isUser = message.role === 'user';
+  const parts = message.text.split(/(```[\s\S]*?```)/g);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`flex gap-4 ${isUser ? "justify-end" : "justify-start"}`}
+    >
+      {!isUser && (
+        <div className="h-9 w-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+          <Bot className="h-5 w-5 text-emerald-400" />
+        </div>
+      )}
+
+      <div className={`flex flex-col max-w-[85%] ${isUser ? "items-end" : "items-start"}`}>
+        <span className="text-[10px] text-zinc-500 font-mono mb-1.5">
+          {isUser ? 'YOU' : 'NAV AI'} • {message.timestamp}
+        </span>
+
+        <div className={`px-4 py-3 rounded-2xl border ${
+          isUser
+            ? "bg-zinc-900 border-zinc-800 text-zinc-100 rounded-tr-none"
+            : "bg-zinc-900/30 border-zinc-900 text-zinc-200 rounded-tl-none"
+        }`}>
+          {parts.map((part, index) => {
+            if (part.startsWith("```")) {
+              const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+              const language = match ? match[1] || "code" : "code";
+              const code = match ? match[2].trim() : part.slice(3, -3).trim();
+              const codeBlockId = `${message.id}_code_${index}`;
+
+              return (
+                <div key={index} className="my-4 border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 shadow-md">
+                  <div className="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800 text-[11px] font-mono text-zinc-400">
+                    <span className="flex items-center gap-1.5 font-semibold uppercase text-emerald-400 tracking-wider">
+                      <Terminal className="h-3 w-3" />
+                      {language}
+                    </span>
+                    <button
+                      onClick={() => copyCodeToClipboard(code, codeBlockId)}
+                      className="flex items-center gap-1 hover:text-zinc-200 transition-colors bg-zinc-800/60 px-2 py-1 rounded border border-zinc-700/50"
+                    >
+                      {copiedCodeId === codeBlockId ? (
+                        <>
+                          <Check className="h-3 w-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <pre className="p-4 overflow-x-auto text-xs font-mono text-zinc-300 leading-relaxed max-w-full">
+                    <code>{code}</code>
+                  </pre>
+                </div>
+              );
+            } else {
+              return (
+                <div key={index} className="space-y-2 whitespace-pre-wrap leading-relaxed text-[14px]">
+                  {part.split("\n").map((line, lIdx) => {
+                    const listMatch = line.match(/^[\s]*[-*+]\s+(.*)/);
+                    if (listMatch) {
+                      return (
+                        <ul key={lIdx} className="list-disc pl-5 my-1 text-zinc-300">
+                          <li>{parseInlineFormatting(listMatch[1])}</li>
+                        </ul>
+                      );
+                    }
+                    return <p key={lIdx} className="text-zinc-300">{parseInlineFormatting(line)}</p>;
+                  })}
+                </div>
+              );
+            }
+          })}
+        </div>
+      </div>
+
+      {isUser && (
+        <div className="h-9 w-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
+          <User className="h-5 w-5 text-emerald-300" />
+        </div>
+      )}
+    </motion.div>
+  );
+});
+
 export default function Playground({ 
   sessions, 
   setSessions, 
@@ -55,7 +177,6 @@ export default function Playground({
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
-  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
@@ -188,91 +309,6 @@ export default function Playground({
     }
   };
 
-  const copyCodeToClipboard = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCodeId(id);
-    setTimeout(() => setCopiedCodeId(null), 2000);
-  };
-
-  // Custom high-fidelity text renderer to handle code fences with copy buttons
-  const renderFormattedText = (messageId: string, text: string) => {
-    const parts = text.split(/(```[\s\S]*?```)/g);
-    
-    return parts.map((part, index) => {
-      if (part.startsWith("```")) {
-        // Extract language and code body
-        const match = part.match(/```(\w*)\n([\s\S]*?)```/);
-        const language = match ? match[1] || "code" : "code";
-        const code = match ? match[2].trim() : part.slice(3, -3).trim();
-        const codeBlockId = `${messageId}_code_${index}`;
-
-        return (
-          <div key={index} className="my-4 border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 shadow-md">
-            <div className="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800 text-[11px] font-mono text-zinc-400">
-              <span className="flex items-center gap-1.5 font-semibold uppercase text-emerald-400 tracking-wider">
-                <Terminal className="h-3 w-3" />
-                {language}
-              </span>
-              <button
-                onClick={() => copyCodeToClipboard(code, codeBlockId)}
-                className="flex items-center gap-1 hover:text-zinc-200 transition-colors bg-zinc-800/60 px-2 py-1 rounded border border-zinc-700/50"
-              >
-                {copiedCodeId === codeBlockId ? (
-                  <>
-                    <Check className="h-3 w-3 text-emerald-400" />
-                    <span className="text-emerald-400">Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" />
-                    <span>Copy</span>
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="p-4 overflow-x-auto text-xs font-mono text-zinc-300 leading-relaxed max-w-full">
-              <code>{code}</code>
-            </pre>
-          </div>
-        );
-      } else {
-        // Inline formatting of bold (**text**), line breaks, list items
-        return (
-          <div key={index} className="space-y-2 whitespace-pre-wrap leading-relaxed text-[14px]">
-            {part.split("\n").map((line, lIdx) => {
-              // List formatting (e.g., "- item" or "* item")
-              const listMatch = line.match(/^[\s]*[-*+]\s+(.*)/);
-              if (listMatch) {
-                return (
-                  <ul key={lIdx} className="list-disc pl-5 my-1 text-zinc-300">
-                    <li>{parseInlineFormatting(listMatch[1])}</li>
-                  </ul>
-                );
-              }
-              return <p key={lIdx} className="text-zinc-300">{parseInlineFormatting(line)}</p>;
-            })}
-          </div>
-        );
-      }
-    });
-  };
-
-  const parseInlineFormatting = (text: string) => {
-    // Basic inline code format `code` and bold **bold**
-    const inlineParts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
-    return inlineParts.map((part, index) => {
-      if (part.startsWith("`") && part.endsWith("`")) {
-        return (
-          <code key={index} className="bg-zinc-800 text-teal-300 px-1.5 py-0.5 rounded font-mono text-xs border border-zinc-700">
-            {part.slice(1, -1)}
-          </code>
-        );
-      } else if (part.startsWith("**") && part.endsWith("**")) {
-        return <strong key={index} className="text-zinc-100 font-bold">{part.slice(2, -2)}</strong>;
-      }
-      return part;
-    });
-  };
 
   const getTemperatureLabel = (temp: number) => {
     if (temp <= 0.2) return "0.2 - Precise & Concise";
@@ -417,47 +453,9 @@ export default function Playground({
           ) : (
             /* Chat Messages list */
             <div className="max-w-3xl mx-auto space-y-6">
-              {activeSession?.messages.map((m) => {
-                const isUser = m.role === 'user';
-                return (
-                  <motion.div
-                    key={m.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex gap-4 ${isUser ? "justify-end" : "justify-start"}`}
-                  >
-                    {/* Bot icon on left */}
-                    {!isUser && (
-                      <div className="h-9 w-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
-                        <Bot className="h-5 w-5 text-emerald-400" />
-                      </div>
-                    )}
-
-                    <div className={`flex flex-col max-w-[85%] ${isUser ? "items-end" : "items-start"}`}>
-                      {/* Name + Time info */}
-                      <span className="text-[10px] text-zinc-500 font-mono mb-1.5">
-                        {isUser ? 'YOU' : 'NAV AI'} • {m.timestamp}
-                      </span>
-                      
-                      {/* Bubble box */}
-                      <div className={`px-4 py-3 rounded-2xl border ${
-                        isUser 
-                          ? "bg-zinc-900 border-zinc-800 text-zinc-100 rounded-tr-none" 
-                          : "bg-zinc-900/30 border-zinc-900 text-zinc-200 rounded-tl-none"
-                      }`}>
-                        {renderFormattedText(m.id, m.text)}
-                      </div>
-                    </div>
-
-                    {/* User icon on right */}
-                    {isUser && (
-                      <div className="h-9 w-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
-                        <User className="h-5 w-5 text-emerald-300" />
-                      </div>
-                    )}
-                  </motion.div>
-                );
-              })}
+              {activeSession?.messages.map((m) => (
+                <ChatMessageItem key={m.id} message={m} />
+              ))}
 
               {/* Loader */}
               {isLoading && (
