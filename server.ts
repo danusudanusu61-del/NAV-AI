@@ -20,7 +20,14 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function readKeys(): ApiKey[] {
+// Performance Optimization: In-memory cache for API keys and request logs.
+// Eliminates repetitive synchronous fs.readFileSync and JSON.parse calls on every endpoint read/poll,
+// reducing response latency from several milliseconds of disk I/O to sub-millisecond memory access.
+// Asynchronous background writes avoid blocking the Node.js event loop during mutation operations.
+let cachedKeys: ApiKey[] = loadInitialKeys();
+let cachedLogs: ApiRequestLog[] = loadInitialLogs();
+
+function loadInitialKeys(): ApiKey[] {
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
@@ -32,15 +39,19 @@ function readKeys(): ApiKey[] {
   return [];
 }
 
-function writeKeys(keys: ApiKey[]) {
-  try {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing keys file", error);
-  }
+function readKeys(): ApiKey[] {
+  return cachedKeys;
 }
 
-function readLogs(): ApiRequestLog[] {
+function writeKeys(keys: ApiKey[]) {
+  cachedKeys = keys;
+  // Non-blocking asynchronous write to preserve data persistence without blocking event loop
+  fs.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8", (err) => {
+    if (err) console.error("Error writing keys file", err);
+  });
+}
+
+function loadInitialLogs(): ApiRequestLog[] {
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
@@ -52,12 +63,16 @@ function readLogs(): ApiRequestLog[] {
   return [];
 }
 
+function readLogs(): ApiRequestLog[] {
+  return cachedLogs;
+}
+
 function writeLogs(logs: ApiRequestLog[]) {
-  try {
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing logs file", error);
-  }
+  cachedLogs = logs;
+  // Non-blocking asynchronous write to preserve data persistence without blocking event loop
+  fs.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8", (err) => {
+    if (err) console.error("Error writing logs file", err);
+  });
 }
 
 // Lazy initializer for Google GenAI client
