@@ -20,19 +20,27 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// In-memory cache for API keys and request logs to avoid repeated synchronous disk I/O & JSON parsing
+let keysCache: ApiKey[] | null = null;
+let logsCache: ApiRequestLog[] | null = null;
+
 function readKeys(): ApiKey[] {
+  if (keysCache !== null) return keysCache;
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      return JSON.parse(data) as ApiKey[];
+      keysCache = JSON.parse(data) as ApiKey[];
+      return keysCache;
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  return [];
+  keysCache = [];
+  return keysCache;
 }
 
 function writeKeys(keys: ApiKey[]) {
+  keysCache = keys;
   try {
     fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
   } catch (error) {
@@ -41,18 +49,22 @@ function writeKeys(keys: ApiKey[]) {
 }
 
 function readLogs(): ApiRequestLog[] {
+  if (logsCache !== null) return logsCache;
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      return JSON.parse(data) as ApiRequestLog[];
+      logsCache = JSON.parse(data) as ApiRequestLog[];
+      return logsCache;
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  return [];
+  logsCache = [];
+  return logsCache;
 }
 
 function writeLogs(logs: ApiRequestLog[]) {
+  logsCache = logs;
   try {
     fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
   } catch (error) {
@@ -213,18 +225,9 @@ app.get("/api/developer/stats", (req, res) => {
 
   const totalRequests = logs.length;
   const activeKeysCount = keys.filter(k => k.status === "active").length;
-  
-  const successfulRequests = logs.filter(l => l.status >= 200 && l.status < 300).length;
-  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
-  
-  const totalDuration = logs.reduce((sum, l) => sum + l.durationMs, 0);
-  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
-  // Requests over time (last 7 days simulation or actual buckets)
-  // Let's bucket by date
+  // Initialize last 7 days date counts
   const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
-  
-  // Initialize last 7 days with zeros
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
@@ -232,13 +235,24 @@ app.get("/api/developer/stats", (req, res) => {
     dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
   }
 
-  logs.forEach(l => {
+  // Calculate successful requests, total duration, and date buckets in a single pass
+  let successfulRequests = 0;
+  let totalDuration = 0;
+
+  for (let i = 0; i < logs.length; i++) {
+    const l = logs[i];
+    const isSuccess = l.status >= 200 && l.status < 300;
+    if (isSuccess) {
+      successfulRequests++;
+    }
+    totalDuration += l.durationMs || 0;
+
     try {
       const logDate = new Date(l.timestamp);
       const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       if (dateCounts[dateStr]) {
         dateCounts[dateStr].total += 1;
-        if (l.status >= 200 && l.status < 300) {
+        if (isSuccess) {
           dateCounts[dateStr].success += 1;
         } else {
           dateCounts[dateStr].failed += 1;
@@ -247,7 +261,10 @@ app.get("/api/developer/stats", (req, res) => {
     } catch (e) {
       // Ignore parsing errors for mock timestamps
     }
-  });
+  }
+
+  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
+  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
   const chartData = Object.entries(dateCounts).map(([date, counts]) => ({
     date,
