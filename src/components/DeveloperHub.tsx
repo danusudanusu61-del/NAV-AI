@@ -244,24 +244,28 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
           </div>
 
           <div className="h-32 flex items-end justify-between gap-2.5 pt-4">
-            {stats?.chartData && stats.chartData.map((d, i) => {
+            {stats?.chartData && (() => {
+              // Performance Optimization: Compute maxVal once before the map loop (O(n))
+              // instead of recalculating Math.max(...stats.chartData.map(...)) inside every bar iteration (O(n²)).
               const maxVal = Math.max(...stats.chartData.map(cd => cd.requests), 1);
-              const heightPct = (d.requests / maxVal) * 100;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer">
-                  <div className="w-full bg-white/5 group-hover:bg-white/10 h-24 rounded-lg flex flex-col justify-end overflow-hidden relative">
-                    <div 
-                      className="bg-gradient-to-t from-indigo-600 via-purple-600 to-teal-400 rounded-t-sm transition-all duration-500"
-                      style={{ height: `${Math.max(heightPct, d.requests > 0 ? 10 : 0)}%` }}
-                    />
-                    <div className="absolute top-1 left-0 right-0 text-center opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-950 border border-white/10 py-0.5 rounded text-[9px] font-mono text-zinc-300 z-10 mx-1">
-                      {d.requests} Req
+              return stats.chartData.map((d, i) => {
+                const heightPct = (d.requests / maxVal) * 100;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer">
+                    <div className="w-full bg-white/5 group-hover:bg-white/10 h-24 rounded-lg flex flex-col justify-end overflow-hidden relative">
+                      <div
+                        className="bg-gradient-to-t from-indigo-600 via-purple-600 to-teal-400 rounded-t-sm transition-all duration-500"
+                        style={{ height: `${Math.max(heightPct, d.requests > 0 ? 10 : 0)}%` }}
+                      />
+                      <div className="absolute top-1 left-0 right-0 text-center opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-950 border border-white/10 py-0.5 rounded text-[9px] font-mono text-zinc-300 z-10 mx-1">
+                        {d.requests} Req
+                      </div>
                     </div>
+                    <span className="text-[10px] font-mono text-white/40">{d.date}</span>
                   </div>
-                  <span className="text-[10px] font-mono text-white/40">{d.date}</span>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
             {(!stats?.chartData || stats.chartData.length === 0) && (
               <div className="w-full text-center text-zinc-500 font-mono text-xs py-8">
                 Waiting for incoming request traffic data logs...
