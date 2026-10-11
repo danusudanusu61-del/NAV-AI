@@ -60,6 +60,10 @@ function writeLogs(logs: ApiRequestLog[]) {
   }
 }
 
+// Fast date formatting helper to avoid expensive Intl.DateTimeFormat / toLocaleDateString in hot loops
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const formatShortDate = (d: Date): string => `${SHORT_MONTHS[d.getMonth()]} ${d.getDate()}`;
+
 // Lazy initializer for Google GenAI client
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
@@ -228,14 +232,14 @@ app.get("/api/developer/stats", (req, res) => {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const dateStr = formatShortDate(d);
     dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
   }
 
   logs.forEach(l => {
     try {
       const logDate = new Date(l.timestamp);
-      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const dateStr = formatShortDate(logDate);
       if (dateCounts[dateStr]) {
         dateCounts[dateStr].total += 1;
         if (l.status >= 200 && l.status < 300) {
