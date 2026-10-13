@@ -20,44 +20,86 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// In-memory caches to prevent expensive synchronous disk reads (fs.readFileSync) and JSON.parse on every endpoint request.
+let keysCache: ApiKey[] | null = null;
+let logsCache: ApiRequestLog[] | null = null;
+
+/**
+ * Reads API keys from memory cache, loading from disk on cold start.
+ * Optimization: Replaces synchronous disk reads on every request/polling cycle with O(1) in-memory retrieval.
+ */
 function readKeys(): ApiKey[] {
+  if (keysCache !== null) {
+    return keysCache;
+  }
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      return JSON.parse(data) as ApiKey[];
+      keysCache = JSON.parse(data) as ApiKey[];
+      return keysCache;
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  return [];
+  keysCache = [];
+  return keysCache;
 }
 
-function writeKeys(keys: ApiKey[]) {
-  try {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing keys file", error);
-  }
+// Serialized promise queues to ensure non-blocking async file writes do not race or complete out of order.
+let writeKeysQueue: Promise<void> = Promise.resolve();
+let writeLogsQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Updates in-memory keys cache and persists to disk asynchronously in sequential order.
+ * Optimization: Non-blocking async file write prevents blocking Node's single-threaded event loop,
+ * while promise queue serialization prevents concurrent disk write race conditions.
+ */
+async function writeKeys(keys: ApiKey[]): Promise<void> {
+  keysCache = keys;
+  const data = JSON.stringify(keys, null, 2);
+  writeKeysQueue = writeKeysQueue
+    .then(() => fs.promises.writeFile(KEYS_FILE, data, "utf-8"))
+    .catch((error) => {
+      console.error("Error writing keys file asynchronously", error);
+    });
+  return writeKeysQueue;
 }
 
+/**
+ * Reads logs from memory cache, loading from disk on cold start.
+ * Optimization: Avoids reading and parsing large logs JSON files repeatedly.
+ */
 function readLogs(): ApiRequestLog[] {
+  if (logsCache !== null) {
+    return logsCache;
+  }
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      return JSON.parse(data) as ApiRequestLog[];
+      logsCache = JSON.parse(data) as ApiRequestLog[];
+      return logsCache;
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  return [];
+  logsCache = [];
+  return logsCache;
 }
 
-function writeLogs(logs: ApiRequestLog[]) {
-  try {
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing logs file", error);
-  }
+/**
+ * Updates in-memory logs cache and persists to disk asynchronously in sequential order.
+ * Optimization: Non-blocking async file write prevents event loop blocking on high traffic log writes,
+ * while promise queue serialization prevents concurrent disk write race conditions.
+ */
+async function writeLogs(logs: ApiRequestLog[]): Promise<void> {
+  logsCache = logs;
+  const data = JSON.stringify(logs, null, 2);
+  writeLogsQueue = writeLogsQueue
+    .then(() => fs.promises.writeFile(LOGS_FILE, data, "utf-8"))
+    .catch((error) => {
+      console.error("Error writing logs file asynchronously", error);
+    });
+  return writeLogsQueue;
 }
 
 // Lazy initializer for Google GenAI client
@@ -144,7 +186,7 @@ app.get("/api/developer/keys", (req, res) => {
   res.json(keys);
 });
 
-app.post("/api/developer/keys", (req, res) => {
+app.post("/api/developer/keys", async (req, res) => {
   try {
     const { name, description, scope, expiresDays } = req.body;
     if (!name) {
@@ -176,7 +218,7 @@ app.post("/api/developer/keys", (req, res) => {
     };
 
     keys.push(newKey);
-    writeKeys(keys);
+    await writeKeys(keys);
 
     res.status(201).json(newKey);
   } catch (error: any) {
@@ -184,7 +226,7 @@ app.post("/api/developer/keys", (req, res) => {
   }
 });
 
-app.post("/api/developer/keys/revoke", (req, res) => {
+app.post("/api/developer/keys/revoke", async (req, res) => {
   const { id } = req.body;
   if (!id) {
     return res.status(400).json({ error: "Key ID is required." });
@@ -197,7 +239,7 @@ app.post("/api/developer/keys/revoke", (req, res) => {
   }
 
   keys[keyIndex].status = "revoked";
-  writeKeys(keys);
+  await writeKeys(keys);
   res.json(keys[keyIndex]);
 });
 
@@ -284,7 +326,7 @@ app.post("/api/v1/chat", async (req, res) => {
   const keys = readKeys();
   const matchedKey = keys.find(k => k.key === apiKeyString);
 
-  const logRequest = (status: number) => {
+  const logRequest = async (status: number) => {
     const duration = Date.now() - startTime;
     const logs = readLogs();
     const newLog: ApiRequestLog = {
@@ -298,16 +340,16 @@ app.post("/api/v1/chat", async (req, res) => {
       ipAddress: req.ip || req.headers["x-forwarded-for"] as string || "127.0.0.1",
     };
     logs.push(newLog);
-    writeLogs(logs);
+    await writeLogs(logs);
 
     if (matchedKey) {
       matchedKey.lastUsedAt = new Date().toISOString();
-      writeKeys(keys);
+      await writeKeys(keys);
     }
   };
 
   if (!matchedKey) {
-    logRequest(401);
+    await logRequest(401);
     return res.status(401).json({
       error: {
         message: "Invalid or missing API key. Please generate a valid NAV AI key at the dashboard.",
@@ -318,7 +360,7 @@ app.post("/api/v1/chat", async (req, res) => {
   }
 
   if (matchedKey.status === "revoked") {
-    logRequest(403);
+    await logRequest(403);
     return res.status(403).json({
       error: {
         message: "This NAV AI key has been revoked and is inactive.",
@@ -329,7 +371,7 @@ app.post("/api/v1/chat", async (req, res) => {
   }
 
   if (matchedKey.expiresAt && new Date(matchedKey.expiresAt) < new Date()) {
-    logRequest(403);
+    await logRequest(403);
     return res.status(403).json({
       error: {
         message: "This NAV AI key has expired.",
@@ -340,7 +382,7 @@ app.post("/api/v1/chat", async (req, res) => {
   }
 
   if (matchedKey.scope === "read") {
-    logRequest(403);
+    await logRequest(403);
     return res.status(403).json({
       error: {
         message: "This key has Read-only scopes and cannot execute Chat completions.",
@@ -352,7 +394,7 @@ app.post("/api/v1/chat", async (req, res) => {
 
   const { message, model, temperature, systemInstruction } = req.body;
   if (!message) {
-    logRequest(400);
+    await logRequest(400);
     return res.status(400).json({
       error: {
         message: "Missing required parameter: 'message' string in body.",
@@ -401,7 +443,7 @@ app.post("/api/v1/chat", async (req, res) => {
     const promptTokens = Math.round(promptLen / 4) + 10;
     const completionTokens = Math.round(replyLen / 4) + 10;
 
-    logRequest(200);
+    await logRequest(200);
 
     return res.json({
       id: "nav_chat_" + Math.random().toString(36).substring(2, 11),
@@ -426,7 +468,7 @@ app.post("/api/v1/chat", async (req, res) => {
     });
   } catch (error: any) {
     console.error("API error for key:", matchedKey.name, error);
-    logRequest(500);
+    await logRequest(500);
     return res.status(500).json({
       error: {
         message: error.message || "An internal error occurred in NAV AI processing.",
