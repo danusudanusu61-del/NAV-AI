@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Key, Plus, Eye, EyeOff, Copy, Check, Trash2, Calendar, 
   BarChart3, RefreshCw, Terminal, Activity, ShieldCheck, AlertCircle, Clock 
@@ -135,6 +135,12 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
     }
   };
 
+  // Memoize maxVal for chart rendering to avoid recalculating Math.max and creating redundant arrays inside .map() loop (O(N^2) -> O(N))
+  const chartMaxVal = useMemo(() => {
+    if (!stats?.chartData || stats.chartData.length === 0) return 1;
+    return Math.max(...stats.chartData.map(cd => cd.requests), 1);
+  }, [stats?.chartData]);
+
   const activeKey = keys.find(k => k.status === 'active')?.key || "nv_live_yourActiveKeyHere";
 
   const getCurlSnippet = (apiKey: string) => {
@@ -245,8 +251,7 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
 
           <div className="h-32 flex items-end justify-between gap-2.5 pt-4">
             {stats?.chartData && stats.chartData.map((d, i) => {
-              const maxVal = Math.max(...stats.chartData.map(cd => cd.requests), 1);
-              const heightPct = (d.requests / maxVal) * 100;
+              const heightPct = (d.requests / chartMaxVal) * 100;
               return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer">
                   <div className="w-full bg-white/5 group-hover:bg-white/10 h-24 rounded-lg flex flex-col justify-end overflow-hidden relative">
