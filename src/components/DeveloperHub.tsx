@@ -42,10 +42,11 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
 
   // Performance optimization: Calculate the max request value once using memoization
   // to prevent re-scanning stats.chartData on every single item in the map loop (O(N^2) -> O(N)).
+  const chartData = stats?.chartData;
   const maxChartRequests = useMemo(() => {
-    if (!stats?.chartData || stats.chartData.length === 0) return 1;
-    return Math.max(...stats.chartData.map(cd => cd.requests), 1);
-  }, [stats?.chartData]);
+    if (!chartData || chartData.length === 0) return 1;
+    return Math.max(...chartData.map(cd => cd.requests), 1);
+  }, [chartData]);
 
   const fetchDeveloperData = async () => {
     setIsLoading(true);
