@@ -20,44 +20,96 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// In-memory caches to avoid blocking synchronous I/O on every request
+let keysCache: ApiKey[] | null = null;
+let logsCache: ApiRequestLog[] | null = null;
+
 function readKeys(): ApiKey[] {
+  if (keysCache !== null) {
+    return keysCache;
+  }
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      return JSON.parse(data) as ApiKey[];
+      keysCache = JSON.parse(data) as ApiKey[];
+      return keysCache;
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  return [];
+  keysCache = [];
+  return keysCache;
+}
+
+let isWritingKeys = false;
+let pendingKeysWrite = false;
+
+function saveKeysToDisk() {
+  if (isWritingKeys) {
+    pendingKeysWrite = true;
+    return;
+  }
+  isWritingKeys = true;
+  pendingKeysWrite = false;
+  const data = JSON.stringify(keysCache || [], null, 2);
+  fs.writeFile(KEYS_FILE, data, "utf-8", (err) => {
+    isWritingKeys = false;
+    if (err) {
+      console.error("Error writing keys file", err);
+    }
+    if (pendingKeysWrite) {
+      saveKeysToDisk();
+    }
+  });
 }
 
 function writeKeys(keys: ApiKey[]) {
-  try {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing keys file", error);
-  }
+  keysCache = keys;
+  saveKeysToDisk();
 }
 
 function readLogs(): ApiRequestLog[] {
+  if (logsCache !== null) {
+    return logsCache;
+  }
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      return JSON.parse(data) as ApiRequestLog[];
+      logsCache = JSON.parse(data) as ApiRequestLog[];
+      return logsCache;
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  return [];
+  logsCache = [];
+  return logsCache;
+}
+
+let isWritingLogs = false;
+let pendingLogsWrite = false;
+
+function saveLogsToDisk() {
+  if (isWritingLogs) {
+    pendingLogsWrite = true;
+    return;
+  }
+  isWritingLogs = true;
+  pendingLogsWrite = false;
+  const data = JSON.stringify(logsCache || [], null, 2);
+  fs.writeFile(LOGS_FILE, data, "utf-8", (err) => {
+    isWritingLogs = false;
+    if (err) {
+      console.error("Error writing logs file", err);
+    }
+    if (pendingLogsWrite) {
+      saveLogsToDisk();
+    }
+  });
 }
 
 function writeLogs(logs: ApiRequestLog[]) {
-  try {
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing logs file", error);
-  }
+  logsCache = logs;
+  saveLogsToDisk();
 }
 
 // Lazy initializer for Google GenAI client
