@@ -1,6 +1,6 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
+import { readFileSync, writeFile, existsSync, mkdirSync } from "fs";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -16,8 +16,8 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const LOGS_FILE = path.join(DATA_DIR, "logs.json");
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!existsSync(DATA_DIR)) {
+  mkdirSync(DATA_DIR, { recursive: true });
 }
 
 // In-memory cache variables to eliminate blocking synchronous disk reads/writes on every API request
@@ -33,8 +33,8 @@ function readKeys(): ApiKey[] {
     return keysCache;
   }
   try {
-    if (fs.existsSync(KEYS_FILE)) {
-      const data = fs.readFileSync(KEYS_FILE, "utf-8");
+    if (existsSync(KEYS_FILE)) {
+      const data = readFileSync(KEYS_FILE, "utf-8");
       keysCache = JSON.parse(data) as ApiKey[];
       return keysCache;
     }
@@ -51,7 +51,7 @@ function readKeys(): ApiKey[] {
  */
 function writeKeys(keys: ApiKey[]) {
   keysCache = keys;
-  fs.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8", (error) => {
+  writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8", (error) => {
     if (error) {
       console.error("Error writing keys file asynchronously", error);
     }
@@ -67,8 +67,8 @@ function readLogs(): ApiRequestLog[] {
     return logsCache;
   }
   try {
-    if (fs.existsSync(LOGS_FILE)) {
-      const data = fs.readFileSync(LOGS_FILE, "utf-8");
+    if (existsSync(LOGS_FILE)) {
+      const data = readFileSync(LOGS_FILE, "utf-8");
       logsCache = JSON.parse(data) as ApiRequestLog[];
       return logsCache;
     }
@@ -85,7 +85,7 @@ function readLogs(): ApiRequestLog[] {
  */
 function writeLogs(logs: ApiRequestLog[]) {
   logsCache = logs;
-  fs.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8", (error) => {
+  writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8", (error) => {
     if (error) {
       console.error("Error writing logs file asynchronously", error);
     }
