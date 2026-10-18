@@ -20,44 +20,72 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// In-memory cache variables to eliminate blocking synchronous disk reads/writes on every API request
+let keysCache: ApiKey[] | null = null;
+let logsCache: ApiRequestLog[] | null = null;
+
+/**
+ * Reads API keys from in-memory cache or initializes from disk.
+ * Fast O(1) in-memory access preventing synchronous event-loop blocking disk reads.
+ */
 function readKeys(): ApiKey[] {
+  if (keysCache !== null) {
+    return keysCache;
+  }
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      return JSON.parse(data) as ApiKey[];
+      keysCache = JSON.parse(data) as ApiKey[];
+      return keysCache;
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  return [];
+  keysCache = [];
+  return keysCache;
 }
 
+/**
+ * Updates in-memory keys cache and persists to disk asynchronously.
+ * Eliminates synchronous fs.writeFileSync blocking the Node.js event loop.
+ */
 function writeKeys(keys: ApiKey[]) {
-  try {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing keys file", error);
-  }
+  keysCache = keys;
+  fs.promises.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8").catch((error) => {
+    console.error("Error writing keys file asynchronously", error);
+  });
 }
 
+/**
+ * Reads request logs from in-memory cache or initializes from disk.
+ * Fast O(1) in-memory access preventing synchronous event-loop blocking disk reads.
+ */
 function readLogs(): ApiRequestLog[] {
+  if (logsCache !== null) {
+    return logsCache;
+  }
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      return JSON.parse(data) as ApiRequestLog[];
+      logsCache = JSON.parse(data) as ApiRequestLog[];
+      return logsCache;
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  return [];
+  logsCache = [];
+  return logsCache;
 }
 
+/**
+ * Updates in-memory logs cache and persists to disk asynchronously.
+ * Eliminates synchronous fs.writeFileSync blocking the Node.js event loop.
+ */
 function writeLogs(logs: ApiRequestLog[]) {
-  try {
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing logs file", error);
-  }
+  logsCache = logs;
+  fs.promises.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8").catch((error) => {
+    console.error("Error writing logs file asynchronously", error);
+  });
 }
 
 // Lazy initializer for Google GenAI client
@@ -212,42 +240,67 @@ app.get("/api/developer/stats", (req, res) => {
   const keys = readKeys();
 
   const totalRequests = logs.length;
-  const activeKeysCount = keys.filter(k => k.status === "active").length;
   
-  const successfulRequests = logs.filter(l => l.status >= 200 && l.status < 300).length;
-  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
-  
-  const totalDuration = logs.reduce((sum, l) => sum + l.durationMs, 0);
-  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
+  // Count active keys in a single pass
+  let activeKeysCount = 0;
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].status === "active") activeKeysCount++;
+  }
 
-  // Requests over time (last 7 days simulation or actual buckets)
-  // Let's bucket by date
+  // Pre-generate date buckets and map for last 7 days
+  // Avoids calling expensive `toLocaleDateString` repeatedly in the logs loop
   const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
-  
-  // Initialize last 7 days with zeros
+  const dateStrMap: { [key: string]: string } = {};
+
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
     dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
+
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    dateStrMap[`${year}-${month}-${day}`] = dateStr;
   }
 
-  logs.forEach(l => {
-    try {
-      const logDate = new Date(l.timestamp);
-      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      if (dateCounts[dateStr]) {
-        dateCounts[dateStr].total += 1;
-        if (l.status >= 200 && l.status < 300) {
-          dateCounts[dateStr].success += 1;
-        } else {
-          dateCounts[dateStr].failed += 1;
-        }
-      }
-    } catch (e) {
-      // Ignore parsing errors for mock timestamps
+  let successfulRequests = 0;
+  let totalDuration = 0;
+
+  // Single O(N) traversal over logs to calculate success counts, duration, and date buckets
+  for (let i = 0; i < logs.length; i++) {
+    const l = logs[i];
+    const isSuccess = l.status >= 200 && l.status < 300;
+    if (isSuccess) {
+      successfulRequests++;
     }
-  });
+    totalDuration += l.durationMs || 0;
+
+    if (l.timestamp) {
+      try {
+        const logDate = new Date(l.timestamp);
+        const year = logDate.getFullYear();
+        const month = String(logDate.getMonth() + 1).padStart(2, "0");
+        const day = String(logDate.getDate()).padStart(2, "0");
+        const isoKey = `${year}-${month}-${day}`;
+        const dateStr = dateStrMap[isoKey];
+
+        if (dateStr && dateCounts[dateStr]) {
+          dateCounts[dateStr].total += 1;
+          if (isSuccess) {
+            dateCounts[dateStr].success += 1;
+          } else {
+            dateCounts[dateStr].failed += 1;
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors for mock or invalid timestamps
+      }
+    }
+  }
+
+  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
+  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
   const chartData = Object.entries(dateCounts).map(([date, counts]) => ({
     date,
