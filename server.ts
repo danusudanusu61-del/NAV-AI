@@ -207,8 +207,14 @@ app.get("/api/developer/logs", (req, res) => {
   res.json(logs.slice(-100).reverse());
 });
 
-// Reusable DateTimeFormat formatter to avoid expensive re-initialization inside loops
-const statsDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+// Lazy-initialized DateTimeFormat formatter to avoid expensive re-initialization inside loops
+let statsDateFormatter: Intl.DateTimeFormat | null = null;
+function getStatsDateFormatter(): Intl.DateTimeFormat {
+  if (!statsDateFormatter) {
+    statsDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+  }
+  return statsDateFormatter;
+}
 
 app.get("/api/developer/stats", (req, res) => {
   const logs = readLogs();
@@ -220,6 +226,8 @@ app.get("/api/developer/stats", (req, res) => {
     if (keys[i].status === "active") activeKeysCount++;
   }
 
+  const dateFormatter = getStatsDateFormatter();
+
   // Requests over time (last 7 days simulation or actual buckets)
   // Let's bucket by date
   const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
@@ -228,7 +236,7 @@ app.get("/api/developer/stats", (req, res) => {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const dateStr = statsDateFormatter.format(d);
+    const dateStr = dateFormatter.format(d);
     dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
   }
 
@@ -244,7 +252,7 @@ app.get("/api/developer/stats", (req, res) => {
 
     try {
       const logDate = new Date(l.timestamp);
-      const dateStr = statsDateFormatter.format(logDate);
+      const dateStr = dateFormatter.format(logDate);
       if (dateCounts[dateStr]) {
         dateCounts[dateStr].total += 1;
         if (isSuccess) {
