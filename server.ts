@@ -207,18 +207,18 @@ app.get("/api/developer/logs", (req, res) => {
   res.json(logs.slice(-100).reverse());
 });
 
+// Reusable DateTimeFormat formatter to avoid expensive re-initialization inside loops
+const statsDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
 app.get("/api/developer/stats", (req, res) => {
   const logs = readLogs();
   const keys = readKeys();
 
   const totalRequests = logs.length;
-  const activeKeysCount = keys.filter(k => k.status === "active").length;
-  
-  const successfulRequests = logs.filter(l => l.status >= 200 && l.status < 300).length;
-  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
-  
-  const totalDuration = logs.reduce((sum, l) => sum + l.durationMs, 0);
-  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
+  let activeKeysCount = 0;
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].status === "active") activeKeysCount++;
+  }
 
   // Requests over time (last 7 days simulation or actual buckets)
   // Let's bucket by date
@@ -228,17 +228,26 @@ app.get("/api/developer/stats", (req, res) => {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const dateStr = statsDateFormatter.format(d);
     dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
   }
 
-  logs.forEach(l => {
+  let successfulRequests = 0;
+  let totalDuration = 0;
+
+  // Single-pass optimization over logs for counts, sum, and date bucketing
+  for (let i = 0; i < logs.length; i++) {
+    const l = logs[i];
+    const isSuccess = l.status >= 200 && l.status < 300;
+    if (isSuccess) successfulRequests++;
+    totalDuration += l.durationMs;
+
     try {
       const logDate = new Date(l.timestamp);
-      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const dateStr = statsDateFormatter.format(logDate);
       if (dateCounts[dateStr]) {
         dateCounts[dateStr].total += 1;
-        if (l.status >= 200 && l.status < 300) {
+        if (isSuccess) {
           dateCounts[dateStr].success += 1;
         } else {
           dateCounts[dateStr].failed += 1;
@@ -247,7 +256,10 @@ app.get("/api/developer/stats", (req, res) => {
     } catch (e) {
       // Ignore parsing errors for mock timestamps
     }
-  });
+  }
+
+  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
+  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
   const chartData = Object.entries(dateCounts).map(([date, counts]) => ({
     date,
