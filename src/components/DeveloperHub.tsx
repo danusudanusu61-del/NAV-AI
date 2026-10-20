@@ -135,6 +135,9 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
     }
   };
 
+  // ⚡ Bolt Optimization: Compute maxVal once outside render JSX map loop
+  const maxVal = stats?.chartData ? Math.max(...stats.chartData.map(cd => cd.requests), 1) : 1;
+
   const activeKey = keys.find(k => k.status === 'active')?.key || "nv_live_yourActiveKeyHere";
 
   const getCurlSnippet = (apiKey: string) => {
@@ -245,7 +248,6 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
 
           <div className="h-32 flex items-end justify-between gap-2.5 pt-4">
             {stats?.chartData && stats.chartData.map((d, i) => {
-              const maxVal = Math.max(...stats.chartData.map(cd => cd.requests), 1);
               const heightPct = (d.requests / maxVal) * 100;
               return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer">
