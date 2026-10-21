@@ -20,19 +20,31 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// ⚡ Bolt Optimization: In-memory cache for file-backed storage.
+// Prevents blocking the Node.js event loop with synchronous disk reads (fs.readFileSync)
+// on every API request and client polling cycle (which calls keys/logs/stats endpoints every 10s).
+let cachedKeys: ApiKey[] | null = null;
+let cachedLogs: ApiRequestLog[] | null = null;
+
 function readKeys(): ApiKey[] {
+  if (cachedKeys !== null) {
+    return cachedKeys;
+  }
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      return JSON.parse(data) as ApiKey[];
+      cachedKeys = JSON.parse(data) as ApiKey[];
+      return cachedKeys;
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  return [];
+  cachedKeys = [];
+  return cachedKeys;
 }
 
 function writeKeys(keys: ApiKey[]) {
+  cachedKeys = keys;
   try {
     fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
   } catch (error) {
@@ -41,18 +53,24 @@ function writeKeys(keys: ApiKey[]) {
 }
 
 function readLogs(): ApiRequestLog[] {
+  if (cachedLogs !== null) {
+    return cachedLogs;
+  }
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      return JSON.parse(data) as ApiRequestLog[];
+      cachedLogs = JSON.parse(data) as ApiRequestLog[];
+      return cachedLogs;
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  return [];
+  cachedLogs = [];
+  return cachedLogs;
 }
 
 function writeLogs(logs: ApiRequestLog[]) {
+  cachedLogs = logs;
   try {
     fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
   } catch (error) {
