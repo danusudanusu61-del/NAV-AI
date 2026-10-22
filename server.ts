@@ -11,68 +11,61 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Ensure local persistence directories exist
+// Ensure local persistence directories exist safely
 const DATA_DIR = path.join(process.cwd(), "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const LOGS_FILE = path.join(DATA_DIR, "logs.json");
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function ensureDataDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (error) {
+    // Catch read-only filesystem errors gracefully in serverless/edge environments
+  }
 }
 
-// Optimization (Bolt ⚡): In-memory caching for keys and logs to eliminate synchronous blocking disk read/write
-// operations on every API request. Writes are persisted asynchronously to avoid blocking the Express event loop.
-let cachedKeys: ApiKey[] | null = null;
-let cachedLogs: ApiRequestLog[] | null = null;
-
 function readKeys(): ApiKey[] {
-  if (cachedKeys !== null) {
-    return cachedKeys;
-  }
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      cachedKeys = JSON.parse(data) as ApiKey[];
-      return cachedKeys;
+      return JSON.parse(data) as ApiKey[];
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  cachedKeys = [];
-  return cachedKeys;
+  return [];
 }
 
 function writeKeys(keys: ApiKey[]) {
-  cachedKeys = keys;
-  // Non-blocking asynchronous disk write
-  fs.promises.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8").catch((error) => {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
+  } catch (error) {
     console.error("Error writing keys file", error);
-  });
+  }
 }
 
 function readLogs(): ApiRequestLog[] {
-  if (cachedLogs !== null) {
-    return cachedLogs;
-  }
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      cachedLogs = JSON.parse(data) as ApiRequestLog[];
-      return cachedLogs;
+      return JSON.parse(data) as ApiRequestLog[];
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  cachedLogs = [];
-  return cachedLogs;
+  return [];
 }
 
 function writeLogs(logs: ApiRequestLog[]) {
-  cachedLogs = logs;
-  // Non-blocking asynchronous disk write
-  fs.promises.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8").catch((error) => {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
+  } catch (error) {
     console.error("Error writing logs file", error);
-  });
+  }
 }
 
 // Lazy initializer for Google GenAI client
