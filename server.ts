@@ -213,48 +213,53 @@ app.get("/api/developer/stats", (req, res) => {
 
   const totalRequests = logs.length;
   const activeKeysCount = keys.filter(k => k.status === "active").length;
-  
-  const successfulRequests = logs.filter(l => l.status >= 200 && l.status < 300).length;
-  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
-  
-  const totalDuration = logs.reduce((sum, l) => sum + l.durationMs, 0);
-  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
-  // Requests over time (last 7 days simulation or actual buckets)
-  // Let's bucket by date
-  const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
-  
-  // Initialize last 7 days with zeros
+  // Bolt Performance Optimization:
+  // 1. Map ISO date strings (YYYY-MM-DD in UTC) to chart entry objects to avoid calling `new Date()`
+  //    and expensive `toLocaleDateString()` inside the log iteration loop.
+  // 2. Aggregate logs in a single-pass O(N) loop over `logs` instead of multiple `.filter()` and `.reduce()` iterations.
+  const chartBuckets: { [isoDate: string]: { date: string; requests: number; success: number; failed: number } } = {};
+  const chartData: Array<{ date: string; requests: number; success: number; failed: number }> = [];
+
+  const now = new Date();
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - i);
+    const isoDate = d.toISOString().slice(0, 10);
+    const dateDisplay = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+    const entry = { date: dateDisplay, requests: 0, success: 0, failed: 0 };
+    chartBuckets[isoDate] = entry;
+    chartData.push(entry);
   }
 
-  logs.forEach(l => {
-    try {
-      const logDate = new Date(l.timestamp);
-      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      if (dateCounts[dateStr]) {
-        dateCounts[dateStr].total += 1;
-        if (l.status >= 200 && l.status < 300) {
-          dateCounts[dateStr].success += 1;
-        } else {
-          dateCounts[dateStr].failed += 1;
-        }
-      }
-    } catch (e) {
-      // Ignore parsing errors for mock timestamps
-    }
-  });
+  let successfulRequests = 0;
+  let totalDuration = 0;
 
-  const chartData = Object.entries(dateCounts).map(([date, counts]) => ({
-    date,
-    requests: counts.total,
-    success: counts.success,
-    failed: counts.failed,
-  }));
+  for (let i = 0; i < logs.length; i++) {
+    const l = logs[i];
+    totalDuration += l.durationMs;
+
+    const isSuccess = l.status >= 200 && l.status < 300;
+    if (isSuccess) {
+      successfulRequests++;
+    }
+
+    // Slice YYYY-MM-DD directly from ISO timestamp for fast O(1) hash map match
+    const isoDate = l.timestamp ? l.timestamp.slice(0, 10) : "";
+    const entry = chartBuckets[isoDate];
+    if (entry) {
+      entry.requests++;
+      if (isSuccess) {
+        entry.success++;
+      } else {
+        entry.failed++;
+      }
+    }
+  }
+
+  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
+  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
   res.json({
     totalRequests,
