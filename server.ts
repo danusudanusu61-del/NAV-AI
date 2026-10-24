@@ -212,19 +212,16 @@ app.get("/api/developer/stats", (req, res) => {
   const keys = readKeys();
 
   const totalRequests = logs.length;
-  const activeKeysCount = keys.filter(k => k.status === "active").length;
   
-  const successfulRequests = logs.filter(l => l.status >= 200 && l.status < 300).length;
-  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
-  
-  const totalDuration = logs.reduce((sum, l) => sum + l.durationMs, 0);
-  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
+  let activeKeysCount = 0;
+  for (const k of keys) {
+    if (k.status === "active") {
+      activeKeysCount++;
+    }
+  }
 
-  // Requests over time (last 7 days simulation or actual buckets)
-  // Let's bucket by date
+  // Pre-initialize last 7 days date buckets
   const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
-  
-  // Initialize last 7 days with zeros
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
@@ -232,22 +229,37 @@ app.get("/api/developer/stats", (req, res) => {
     dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
   }
 
-  logs.forEach(l => {
+  // Bolt Optimization: Calculate successful requests, total duration, and date bucket aggregations
+  // in a single pass over `logs` instead of multiple separate array passes (filter + reduce + forEach).
+  let successfulRequests = 0;
+  let totalDuration = 0;
+
+  for (const l of logs) {
+    const isSuccess = l.status >= 200 && l.status < 300;
+    if (isSuccess) {
+      successfulRequests++;
+    }
+    totalDuration += l.durationMs || 0;
+
     try {
       const logDate = new Date(l.timestamp);
       const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      if (dateCounts[dateStr]) {
-        dateCounts[dateStr].total += 1;
-        if (l.status >= 200 && l.status < 300) {
-          dateCounts[dateStr].success += 1;
+      const bucket = dateCounts[dateStr];
+      if (bucket) {
+        bucket.total += 1;
+        if (isSuccess) {
+          bucket.success += 1;
         } else {
-          dateCounts[dateStr].failed += 1;
+          bucket.failed += 1;
         }
       }
     } catch (e) {
       // Ignore parsing errors for mock timestamps
     }
-  });
+  }
+
+  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
+  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
   const chartData = Object.entries(dateCounts).map(([date, counts]) => ({
     date,
