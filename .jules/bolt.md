@@ -1,0 +1,3 @@
+## 2026-10-25 - Synchronous Disk I/O Bottleneck in Developer API & Telemetry Stats
+**Learning:** In Express servers using JSON file persistence, reading and parsing JSON files synchronously (`fs.readFileSync`) on every API request and polling endpoint blocks the Node.js event loop thread, causing latency spikes and poor concurrency performance. In addition, using `toLocaleDateString()` inside loops over telemetry log arrays repeatedly instantiates costly ICU date formatters.
+**Action:** Use in-memory caching for JSON-based file persistence with async write-throughs, and reuse a top-level `Intl.DateTimeFormat` instance with single-pass loops for telemetry aggregation.
