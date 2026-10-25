@@ -16,9 +16,17 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const LOGS_FILE = path.join(DATA_DIR, "logs.json");
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function ensureDataDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (error) {
+    console.warn("Unable to initialize local data directory:", error);
+  }
 }
+
+ensureDataDir();
 
 // ⚡ Bolt Optimization: In-memory caching to eliminate blocking synchronous disk I/O (fs.readFileSync/writeFileSync) and JSON parsing overhead on every API call.
 let keysCache: ApiKey[] | null = null;
@@ -43,9 +51,13 @@ function readKeys(): ApiKey[] {
 
 function writeKeys(keys: ApiKey[]) {
   keysCache = keys;
-  // Write asynchronously using fs.promises to prevent blocking the Node.js event loop
-  fs.promises.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8")
-    .catch((err) => console.error("Error writing keys file", err));
+  try {
+    ensureDataDir();
+    fs.promises.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8")
+      .catch((err) => console.error("Error writing keys file", err));
+  } catch (error) {
+    console.error("Error writing keys file", error);
+  }
 }
 
 function readLogs(): ApiRequestLog[] {
@@ -67,9 +79,13 @@ function readLogs(): ApiRequestLog[] {
 
 function writeLogs(logs: ApiRequestLog[]) {
   logsCache = logs;
-  // Write asynchronously using fs.promises to prevent blocking the Node.js event loop
-  fs.promises.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8")
-    .catch((err) => console.error("Error writing logs file", err));
+  try {
+    ensureDataDir();
+    fs.promises.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8")
+      .catch((err) => console.error("Error writing logs file", err));
+  } catch (error) {
+    console.error("Error writing logs file", error);
+  }
 }
 
 // Lazy initializer for Google GenAI client
@@ -478,3 +494,5 @@ async function startServer() {
 }
 
 startServer();
+
+export default app;
