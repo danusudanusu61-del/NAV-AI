@@ -43,14 +43,9 @@ function readKeys(): ApiKey[] {
 
 function writeKeys(keys: ApiKey[]) {
   keysCache = keys;
-  try {
-    // Write asynchronously to prevent blocking the Node.js event loop
-    fs.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8", (err) => {
-      if (err) console.error("Error writing keys file", err);
-    });
-  } catch (error) {
-    console.error("Error writing keys file", error);
-  }
+  // Write asynchronously using fs.promises to prevent blocking the Node.js event loop
+  fs.promises.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8")
+    .catch((err) => console.error("Error writing keys file", err));
 }
 
 function readLogs(): ApiRequestLog[] {
@@ -72,14 +67,9 @@ function readLogs(): ApiRequestLog[] {
 
 function writeLogs(logs: ApiRequestLog[]) {
   logsCache = logs;
-  try {
-    // Write asynchronously to prevent blocking the Node.js event loop
-    fs.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8", (err) => {
-      if (err) console.error("Error writing logs file", err);
-    });
-  } catch (error) {
-    console.error("Error writing logs file", error);
-  }
+  // Write asynchronously using fs.promises to prevent blocking the Node.js event loop
+  fs.promises.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8")
+    .catch((err) => console.error("Error writing logs file", err));
 }
 
 // Lazy initializer for Google GenAI client
