@@ -58,8 +58,10 @@ function readKeys(): ApiKey[] {
 function writeKeys(keys: ApiKey[]) {
   keysCache = keys;
   // Non-blocking asynchronous persistence to disk
-  fs.promises.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8").catch((error) => {
-    console.error("Error writing keys file asynchronously", error);
+  fs.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8", (error) => {
+    if (error) {
+      console.error("Error writing keys file asynchronously", error);
+    }
   });
 }
 
@@ -73,8 +75,10 @@ function readLogs(): ApiRequestLog[] {
 function writeLogs(logs: ApiRequestLog[]) {
   logsCache = logs;
   // Non-blocking asynchronous persistence to disk
-  fs.promises.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8").catch((error) => {
-    console.error("Error writing logs file asynchronously", error);
+  fs.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8", (error) => {
+    if (error) {
+      console.error("Error writing logs file asynchronously", error);
+    }
   });
 }
 
