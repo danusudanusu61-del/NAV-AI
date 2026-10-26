@@ -16,8 +16,14 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const LOGS_FILE = path.join(DATA_DIR, "logs.json");
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  if (fs && fs.existsSync && !fs.existsSync(DATA_DIR)) {
+    if (fs.mkdirSync) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  }
+} catch (error) {
+  console.warn("Could not create data directory", error);
 }
 
 // In-memory caches to avoid blocking synchronous disk I/O on every API call/polling request
