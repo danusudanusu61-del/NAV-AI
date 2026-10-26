@@ -20,7 +20,11 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function readKeys(): ApiKey[] {
+// In-memory caches to avoid blocking synchronous disk I/O on every API call/polling request
+let keysCache: ApiKey[] | null = null;
+let logsCache: ApiRequestLog[] | null = null;
+
+function loadKeysFromDisk(): ApiKey[] {
   try {
     if (fs.existsSync(KEYS_FILE)) {
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
@@ -32,15 +36,7 @@ function readKeys(): ApiKey[] {
   return [];
 }
 
-function writeKeys(keys: ApiKey[]) {
-  try {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing keys file", error);
-  }
-}
-
-function readLogs(): ApiRequestLog[] {
+function loadLogsFromDisk(): ApiRequestLog[] {
   try {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
@@ -52,12 +48,34 @@ function readLogs(): ApiRequestLog[] {
   return [];
 }
 
-function writeLogs(logs: ApiRequestLog[]) {
-  try {
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing logs file", error);
+function readKeys(): ApiKey[] {
+  if (!keysCache) {
+    keysCache = loadKeysFromDisk();
   }
+  return keysCache;
+}
+
+function writeKeys(keys: ApiKey[]) {
+  keysCache = keys;
+  // Non-blocking asynchronous persistence to disk
+  fs.promises.writeFile(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8").catch((error) => {
+    console.error("Error writing keys file asynchronously", error);
+  });
+}
+
+function readLogs(): ApiRequestLog[] {
+  if (!logsCache) {
+    logsCache = loadLogsFromDisk();
+  }
+  return logsCache;
+}
+
+function writeLogs(logs: ApiRequestLog[]) {
+  logsCache = logs;
+  // Non-blocking asynchronous persistence to disk
+  fs.promises.writeFile(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8").catch((error) => {
+    console.error("Error writing logs file asynchronously", error);
+  });
 }
 
 // Lazy initializer for Google GenAI client
