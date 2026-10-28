@@ -244,9 +244,11 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
           </div>
 
           <div className="h-32 flex items-end justify-between gap-2.5 pt-4">
-            {stats?.chartData && stats.chartData.map((d, i) => {
+            {stats?.chartData && (() => {
+              // Calculate maxVal once per render pass instead of inside the .map loop (O(N) instead of O(N^2))
               const maxVal = Math.max(...stats.chartData.map(cd => cd.requests), 1);
-              const heightPct = (d.requests / maxVal) * 100;
+              return stats.chartData.map((d, i) => {
+                const heightPct = (d.requests / maxVal) * 100;
               return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer">
                   <div className="w-full bg-white/5 group-hover:bg-white/10 h-24 rounded-lg flex flex-col justify-end overflow-hidden relative">
@@ -261,7 +263,8 @@ export default function DeveloperHub({ apiStatus }: DeveloperHubProps) {
                   <span className="text-[10px] font-mono text-white/40">{d.date}</span>
                 </div>
               );
-            })}
+            });
+            })()}
             {(!stats?.chartData || stats.chartData.length === 0) && (
               <div className="w-full text-center text-zinc-500 font-mono text-xs py-8">
                 Waiting for incoming request traffic data logs...
