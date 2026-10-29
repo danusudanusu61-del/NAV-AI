@@ -1,3 +1,3 @@
-## 2025-10-29 - In-memory Caching and Serialized Async Persistence for Express Endpoints
-**Learning:** Synchronous file I/O operations (`readFileSync`/`writeFileSync`) in Express route handlers and polling endpoints cause severe event loop blocking as request volume or JSON size grows. Direct non-blocking async writes without queueing/coalescing can cause concurrent write race conditions and file truncation.
-**Action:** Use in-memory cache variables for instant O(1) reads, and implement a pending write flag / coalescing queue for asynchronous writes to ensure thread-safe non-blocking persistence.
+## 2025-10-29 - Stat mtime Validated In-Memory Cache for JSON Persistence
+**Learning:** Re-parsing JSON and reading disk files on every Express request or polling interval creates significant CPU and file I/O overhead. Validating `fs.statSync(file).mtimeMs` before returning the in-memory cache allows instant O(1) cached reads while seamlessly invalidating if the file on disk is modified externally or between test runs.
+**Action:** Cache parsed JSON in memory and compare `fs.statSync(file).mtimeMs` against cached timestamp to avoid unneeded disk reads and JSON parsing.

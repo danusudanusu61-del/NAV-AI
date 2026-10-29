@@ -20,90 +20,75 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// ⚡ In-memory cache variables for fast O(1) reads without blocking synchronous disk I/O on every request
+// ⚡ In-memory cache with stat mtime validation for fast O(1) reads without redundant JSON parsing
 let keysCache: ApiKey[] | null = null;
+let keysMtime: number | null = null;
+
 let logsCache: ApiRequestLog[] | null = null;
+let logsMtime: number | null = null;
 
 function readKeys(): ApiKey[] {
-  if (keysCache !== null) {
-    return keysCache;
-  }
   try {
     if (fs.existsSync(KEYS_FILE)) {
+      const stat = fs.statSync(KEYS_FILE);
+      if (keysCache !== null && keysMtime === stat.mtimeMs) {
+        return keysCache;
+      }
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
       keysCache = JSON.parse(data) as ApiKey[];
+      keysMtime = stat.mtimeMs;
       return keysCache;
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
   keysCache = [];
+  keysMtime = null;
   return keysCache;
 }
 
-let isWritingKeys = false;
-let pendingKeysWrite = false;
-
 function writeKeys(keys: ApiKey[]) {
-  keysCache = keys;
-  if (isWritingKeys) {
-    pendingKeysWrite = true;
-    return;
+  try {
+    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
+    keysCache = keys;
+    if (fs.existsSync(KEYS_FILE)) {
+      keysMtime = fs.statSync(KEYS_FILE).mtimeMs;
+    }
+  } catch (error) {
+    console.error("Error writing keys file", error);
   }
-  isWritingKeys = true;
-  pendingKeysWrite = false;
-
-  const dataToSave = JSON.stringify(keysCache, null, 2);
-  fs.writeFile(KEYS_FILE, dataToSave, "utf-8", (error) => {
-    isWritingKeys = false;
-    if (error) {
-      console.error("Error writing keys file", error);
-    }
-    if (pendingKeysWrite) {
-      writeKeys(keysCache!);
-    }
-  });
 }
 
 function readLogs(): ApiRequestLog[] {
-  if (logsCache !== null) {
-    return logsCache;
-  }
   try {
     if (fs.existsSync(LOGS_FILE)) {
+      const stat = fs.statSync(LOGS_FILE);
+      if (logsCache !== null && logsMtime === stat.mtimeMs) {
+        return logsCache;
+      }
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
       logsCache = JSON.parse(data) as ApiRequestLog[];
+      logsMtime = stat.mtimeMs;
       return logsCache;
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
   logsCache = [];
+  logsMtime = null;
   return logsCache;
 }
 
-let isWritingLogs = false;
-let pendingLogsWrite = false;
-
 function writeLogs(logs: ApiRequestLog[]) {
-  logsCache = logs;
-  if (isWritingLogs) {
-    pendingLogsWrite = true;
-    return;
+  try {
+    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
+    logsCache = logs;
+    if (fs.existsSync(LOGS_FILE)) {
+      logsMtime = fs.statSync(LOGS_FILE).mtimeMs;
+    }
+  } catch (error) {
+    console.error("Error writing logs file", error);
   }
-  isWritingLogs = true;
-  pendingLogsWrite = false;
-
-  const dataToSave = JSON.stringify(logsCache, null, 2);
-  fs.writeFile(LOGS_FILE, dataToSave, "utf-8", (error) => {
-    isWritingLogs = false;
-    if (error) {
-      console.error("Error writing logs file", error);
-    }
-    if (pendingLogsWrite) {
-      writeLogs(logsCache!);
-    }
-  });
 }
 
 // Lazy initializer for Google GenAI client
