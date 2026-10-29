@@ -20,21 +20,40 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// ⚡ In-memory cache with stat mtime validation for fast O(1) reads without redundant JSON parsing
+let keysCache: ApiKey[] | null = null;
+let keysMtime: number | null = null;
+
+let logsCache: ApiRequestLog[] | null = null;
+let logsMtime: number | null = null;
+
 function readKeys(): ApiKey[] {
   try {
     if (fs.existsSync(KEYS_FILE)) {
+      const stat = fs.statSync(KEYS_FILE);
+      if (keysCache !== null && keysMtime === stat.mtimeMs) {
+        return keysCache;
+      }
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      return JSON.parse(data) as ApiKey[];
+      keysCache = JSON.parse(data) as ApiKey[];
+      keysMtime = stat.mtimeMs;
+      return keysCache;
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  return [];
+  keysCache = [];
+  keysMtime = null;
+  return keysCache;
 }
 
 function writeKeys(keys: ApiKey[]) {
   try {
     fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
+    keysCache = keys;
+    if (fs.existsSync(KEYS_FILE)) {
+      keysMtime = fs.statSync(KEYS_FILE).mtimeMs;
+    }
   } catch (error) {
     console.error("Error writing keys file", error);
   }
@@ -43,18 +62,30 @@ function writeKeys(keys: ApiKey[]) {
 function readLogs(): ApiRequestLog[] {
   try {
     if (fs.existsSync(LOGS_FILE)) {
+      const stat = fs.statSync(LOGS_FILE);
+      if (logsCache !== null && logsMtime === stat.mtimeMs) {
+        return logsCache;
+      }
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      return JSON.parse(data) as ApiRequestLog[];
+      logsCache = JSON.parse(data) as ApiRequestLog[];
+      logsMtime = stat.mtimeMs;
+      return logsCache;
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  return [];
+  logsCache = [];
+  logsMtime = null;
+  return logsCache;
 }
 
 function writeLogs(logs: ApiRequestLog[]) {
   try {
     fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
+    logsCache = logs;
+    if (fs.existsSync(LOGS_FILE)) {
+      logsMtime = fs.statSync(LOGS_FILE).mtimeMs;
+    }
   } catch (error) {
     console.error("Error writing logs file", error);
   }
