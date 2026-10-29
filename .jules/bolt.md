@@ -1,3 +1,3 @@
-## 2025-10-29 - Stat mtime Validated In-Memory Cache for JSON Persistence
-**Learning:** Re-parsing JSON and reading disk files on every Express request or polling interval creates significant CPU and file I/O overhead. Validating `fs.statSync(file).mtimeMs` before returning the in-memory cache allows instant O(1) cached reads while seamlessly invalidating if the file on disk is modified externally or between test runs.
-**Action:** Cache parsed JSON in memory and compare `fs.statSync(file).mtimeMs` against cached timestamp to avoid unneeded disk reads and JSON parsing.
+## 2025-10-29 - Single-pass Aggregation and ICU Locale Pre-calculation for Analytics
+**Learning:** Invoking `toLocaleDateString` inside log processing loops causes heavy ICU locale formatting overhead on every request. Pre-calculating ISO date prefix mappings (`YYYY-MM-DD`) for the target date buckets and aggregating metrics in a single O(N) loop eliminates repetitive array iterations and ICU formatting overhead.
+**Action:** Pre-compute date lookup maps using ISO prefixes (`isoToDateStr`) before aggregating logs in a single loop.

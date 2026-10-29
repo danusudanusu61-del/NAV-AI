@@ -20,40 +20,21 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// ⚡ In-memory cache with stat mtime validation for fast O(1) reads without redundant JSON parsing
-let keysCache: ApiKey[] | null = null;
-let keysMtime: number | null = null;
-
-let logsCache: ApiRequestLog[] | null = null;
-let logsMtime: number | null = null;
-
 function readKeys(): ApiKey[] {
   try {
     if (fs.existsSync(KEYS_FILE)) {
-      const stat = fs.statSync(KEYS_FILE);
-      if (keysCache !== null && keysMtime === stat.mtimeMs) {
-        return keysCache;
-      }
       const data = fs.readFileSync(KEYS_FILE, "utf-8");
-      keysCache = JSON.parse(data) as ApiKey[];
-      keysMtime = stat.mtimeMs;
-      return keysCache;
+      return JSON.parse(data) as ApiKey[];
     }
   } catch (error) {
     console.error("Error reading keys file, resetting to empty", error);
   }
-  keysCache = [];
-  keysMtime = null;
-  return keysCache;
+  return [];
 }
 
 function writeKeys(keys: ApiKey[]) {
   try {
     fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
-    keysCache = keys;
-    if (fs.existsSync(KEYS_FILE)) {
-      keysMtime = fs.statSync(KEYS_FILE).mtimeMs;
-    }
   } catch (error) {
     console.error("Error writing keys file", error);
   }
@@ -62,30 +43,18 @@ function writeKeys(keys: ApiKey[]) {
 function readLogs(): ApiRequestLog[] {
   try {
     if (fs.existsSync(LOGS_FILE)) {
-      const stat = fs.statSync(LOGS_FILE);
-      if (logsCache !== null && logsMtime === stat.mtimeMs) {
-        return logsCache;
-      }
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      logsCache = JSON.parse(data) as ApiRequestLog[];
-      logsMtime = stat.mtimeMs;
-      return logsCache;
+      return JSON.parse(data) as ApiRequestLog[];
     }
   } catch (error) {
     console.error("Error reading logs file, resetting to empty", error);
   }
-  logsCache = [];
-  logsMtime = null;
-  return logsCache;
+  return [];
 }
 
 function writeLogs(logs: ApiRequestLog[]) {
   try {
     fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
-    logsCache = logs;
-    if (fs.existsSync(LOGS_FILE)) {
-      logsMtime = fs.statSync(LOGS_FILE).mtimeMs;
-    }
   } catch (error) {
     console.error("Error writing logs file", error);
   }
@@ -243,42 +212,52 @@ app.get("/api/developer/stats", (req, res) => {
   const keys = readKeys();
 
   const totalRequests = logs.length;
-  const activeKeysCount = keys.filter(k => k.status === "active").length;
-  
-  const successfulRequests = logs.filter(l => l.status >= 200 && l.status < 300).length;
-  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
-  
-  const totalDuration = logs.reduce((sum, l) => sum + l.durationMs, 0);
-  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
-
-  // Requests over time (last 7 days simulation or actual buckets)
-  // Let's bucket by date
-  const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
-  
-  // Initialize last 7 days with zeros
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
+  let activeKeysCount = 0;
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].status === "active") activeKeysCount++;
   }
 
-  logs.forEach(l => {
-    try {
-      const logDate = new Date(l.timestamp);
-      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      if (dateCounts[dateStr]) {
+  // ⚡ Pre-compute last 7 days date strings and ISO date prefixes (YYYY-MM-DD)
+  // Avoids calling expensive ICU locale formatting (toLocaleDateString) inside the log loop
+  const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
+  const isoToDateStr: { [isoPrefix: string]: string } = {};
+
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - i);
+    // Explicit timeZone: "UTC" ensures 100% alignment with UTC ISO YYYY-MM-DD prefixes across all host timezones
+    const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
+    isoToDateStr[d.toISOString().substring(0, 10)] = dateStr;
+  }
+
+  let successfulRequests = 0;
+  let totalDuration = 0;
+
+  // ⚡ Single-pass O(N) aggregation over request logs
+  for (let i = 0; i < logs.length; i++) {
+    const l = logs[i];
+    const isSuccess = l.status >= 200 && l.status < 300;
+    if (isSuccess) successfulRequests++;
+    totalDuration += l.durationMs || 0;
+
+    if (l.timestamp && l.timestamp.length >= 10) {
+      const isoPrefix = l.timestamp.substring(0, 10);
+      const dateStr = isoToDateStr[isoPrefix];
+      if (dateStr && dateCounts[dateStr]) {
         dateCounts[dateStr].total += 1;
-        if (l.status >= 200 && l.status < 300) {
+        if (isSuccess) {
           dateCounts[dateStr].success += 1;
         } else {
           dateCounts[dateStr].failed += 1;
         }
       }
-    } catch (e) {
-      // Ignore parsing errors for mock timestamps
     }
-  });
+  }
+
+  const successRate = totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 100;
+  const avgResponseTime = totalRequests > 0 ? Math.round(totalDuration / totalRequests) : 0;
 
   const chartData = Object.entries(dateCounts).map(([date, counts]) => ({
     date,
