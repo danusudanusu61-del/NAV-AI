@@ -1,0 +1,3 @@
+## 2025-10-29 - In-memory Caching and Serialized Async Persistence for Express Endpoints
+**Learning:** Synchronous file I/O operations (`readFileSync`/`writeFileSync`) in Express route handlers and polling endpoints cause severe event loop blocking as request volume or JSON size grows. Direct non-blocking async writes without queueing/coalescing can cause concurrent write race conditions and file truncation.
+**Action:** Use in-memory cache variables for instant O(1) reads, and implement a pending write flag / coalescing queue for asynchronous writes to ensure thread-safe non-blocking persistence.
