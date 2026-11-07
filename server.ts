@@ -60,6 +60,11 @@ function writeLogs(logs: ApiRequestLog[]) {
   }
 }
 
+// Reusable date formatter for stats bucketing.
+// Calling Date.prototype.toLocaleDateString inside tight loops re-instantiates an Intl.DateTimeFormat
+// object on every iteration, which is ~80x slower and blocks the Node.js event loop on heavy logs.
+const statsDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
 // Lazy initializer for Google GenAI client
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
@@ -224,18 +229,19 @@ app.get("/api/developer/stats", (req, res) => {
   // Let's bucket by date
   const dateCounts: { [key: string]: { total: number; success: number; failed: number } } = {};
   
-  // Initialize last 7 days with zeros
+  // Initialize last 7 days with zeros using cached formatter
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const dateStr = statsDateFormatter.format(d);
     dateCounts[dateStr] = { total: 0, success: 0, failed: 0 };
   }
 
   logs.forEach(l => {
     try {
       const logDate = new Date(l.timestamp);
-      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      // Reuse pre-instantiated formatter to avoid event loop blocking across logs
+      const dateStr = statsDateFormatter.format(logDate);
       if (dateCounts[dateStr]) {
         dateCounts[dateStr].total += 1;
         if (l.status >= 200 && l.status < 300) {
